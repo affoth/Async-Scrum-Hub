@@ -1,0 +1,158 @@
+# Docker Compose configuration for Async Scrum Hub
+# This file defines all services needed for local development
+#
+# Services:
+# - postgres: PostgreSQL database
+# - backend: FastAPI Python application
+# - frontend: React + Vite application
+#
+# Usage:
+#   docker-compose up         # Start all services
+#   docker-compose down       # Stop all services
+#   docker-compose logs -f    # View logs from all services
+
+services:
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:15-alpine
+    container_name: async-scrum-db
+    restart: unless-stopped
+    environment:
+      # Database credentials (matching .env.example)
+      POSTGRES_USER: ${DB_USER:-scrumadmin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password_123}
+      POSTGRES_DB: ${DB_NAME:-async_scrum_hub}
+    ports:
+      # Expose PostgreSQL on host machine
+      # Format: host_port:container_port
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # Persist database data between container restarts
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Check if PostgreSQL is ready to accept connections
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-scrumadmin} -d ${DB_NAME:-async_scrum_hub}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - async-scrum-network
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # FastAPI Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: async-scrum-backend
+    restart: unless-stopped
+    environment:
+      # Database connection string
+      DB_USER: ${DB_USER:-scrumadmin}
+      DB_PASSWORD: ${DB_PASSWORD:-dev_password_123}
+      DB_HOST: postgres  # Service name in Docker network
+      DB_PORT: 5432      # Internal PostgreSQL port
+      DB_NAME: ${DB_NAME:-async_scrum_hub}
+
+      # JWT / Auth settings
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+
+      # SMTP / Email settings
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-Async Scrum Hub}
+
+      # Application settings
+      PYTHONUNBUFFERED: 1  # Show Python output in real-time
+      PYTHONDONTWRITEBYTECODE: 1  # Don't create .pyc files
+    ports:
+      # Expose FastAPI on port 8000
+      - "8000:8000"
+    volumes:
+      # Mount backend code for hot-reloading during development
+      - ./backend:/app
+      # Exclude venv and __pycache__ from mount
+      - /app/__pycache__
+      - /app/.venv
+    depends_on:
+      postgres:
+        # Wait for PostgreSQL to be healthy before starting
+        condition: service_healthy
+    networks:
+      - async-scrum-network
+    command: >
+      sh -c "
+        echo 'Waiting for database to be ready...' &&
+        sleep 5 &&
+        echo 'Running Alembic migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting FastAPI server...' &&
+        uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # React Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: async-scrum-frontend
+    restart: unless-stopped
+    environment:
+      # Backend API URL (accessed from browser through nginx HTTPS)
+      VITE_API_URL: https://${HOST_IP:-localhost}:8443/api/v1
+    volumes:
+      # Mount frontend code for hot-reloading
+      - ./frontend:/app
+      # Exclude node_modules from mount (use container's version)
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - async-scrum-network
+    stdin_open: true  # Keep stdin open for interactive debugging
+    tty: true         # Allocate a pseudo-TTY
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  # Nginx Reverse Proxy with HTTPS
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: async-scrum-nginx
+    ports:
+      - "8443:443"
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - async-scrum-network
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+# Named volumes for data persistence
+volumes:
+  postgres_data:
+    driver: local
+    # This volume persists PostgreSQL data between container restarts
+    # Data is stored in Docker's default volume location
+
+# Custom network for service communication
+networks:
+  async-scrum-network:
+    driver: bridge
+    # All services can communicate using their service names as hostnames
