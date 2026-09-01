@@ -25,6 +25,7 @@ const navItems = [
 
 export function Sidebar() {
 	const location = useLocation();
+	const isDemoMode = import.meta.env.VITE_DEMO_MODE === "true";
 	const {
 		// state
 		document,
@@ -68,7 +69,21 @@ export function Sidebar() {
 					})}
 				</nav>
 
-				<div className="p-4 border-t border-gray-100">
+				<div className="p-4 border-t border-gray-100 space-y-4">
+					{isDemoMode && (
+						<div className="mx-4 p-3 rounded-lg border border-cyan-100 bg-cyan-50 text-xs text-gray-600 space-y-2">
+							<p className="font-medium text-cyan-800">Demo Mode</p>
+							<p>
+								This is a front-end demonstration environment and is not
+								connected to a production backend.
+							</p>
+							<p>
+								All names and any other information displayed are entirely
+								fictional and used for demonstration purposes only. No real
+								user data is used or processed.
+							</p>
+						</div>
+					)}
 					<div className="px-4 flex flex-col gap-2">
 						<button
 							onClick={() => openDocument("privacy")}
