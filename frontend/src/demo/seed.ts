@@ -147,7 +147,7 @@ export function createSeed(): DemoState {
 	];
 
 	return {
-		org: { id: ORG_ID, name: "Pixel Forge", join_code: "DEMO-2F4A" },
+		org: { id: ORG_ID, name: "Demo Mode", join_code: "DEMO-2F4A" },
 		currentUserId: U.alex,
 		users,
 		tickets,
